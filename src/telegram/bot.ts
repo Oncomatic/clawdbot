@@ -181,9 +181,28 @@ export function createTelegramBot(opts: TelegramBotOptions) {
         );
       }
 
+      // Track tool results sent during streaming so we don't duplicate them
+      const toolResultsSent = new Set<string>();
+
       const replyResult = await getReplyFromConfig(
         ctxPayload,
-        { onReplyStart: sendTyping },
+        {
+          onReplyStart: sendTyping,
+          onToolResult: async (payload) => {
+            // Stream intermediate tool results as they happen
+            if (!payload?.text && !(payload?.mediaUrls?.length ?? 0)) return;
+            const key = payload.text ?? payload.mediaUrls?.join(",") ?? "";
+            if (toolResultsSent.has(key)) return;
+            toolResultsSent.add(key);
+            await deliverReplies({
+              replies: [{ text: payload.text, mediaUrls: payload.mediaUrls }],
+              chatId: String(chatId),
+              token: opts.token,
+              runtime,
+              bot,
+            });
+          },
+        },
         cfg,
       );
       const replies = replyResult
@@ -193,8 +212,15 @@ export function createTelegramBot(opts: TelegramBotOptions) {
         : [];
       if (replies.length === 0) return;
 
+      // Filter out already-sent tool results from final replies
+      const filteredReplies = replies.filter((r) => {
+        const key = r.text ?? r.mediaUrls?.join(",") ?? "";
+        return !toolResultsSent.has(key);
+      });
+      if (filteredReplies.length === 0) return;
+
       await deliverReplies({
-        replies,
+        replies: filteredReplies,
         chatId: String(chatId),
         token: opts.token,
         runtime,
