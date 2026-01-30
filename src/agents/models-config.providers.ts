@@ -246,6 +246,12 @@ export function normalizeProviders(params: {
       normalizedProvider = googleNormalized;
     }
 
+    // Default to openai-completions API when not specified (most common for custom providers)
+    if (!normalizedProvider.api) {
+      mutated = true;
+      normalizedProvider = { ...normalizedProvider, api: "openai-completions" };
+    }
+
     next[key] = normalizedProvider;
   }
 
