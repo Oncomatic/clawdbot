@@ -107,6 +107,7 @@ export function derivePromptTokens(usage?: {
 export function deriveSessionTotalTokens(params: {
   usage?: {
     input?: number;
+    output?: number;
     total?: number;
     cacheRead?: number;
     cacheWrite?: number;
@@ -117,13 +118,27 @@ export function deriveSessionTotalTokens(params: {
   if (!usage) {
     return undefined;
   }
+
   const input = usage.input ?? 0;
+  const output = usage.output ?? 0;
+
+  // Prefer derived prompt tokens (input + cache read/write) when available.
+  // Then include output tokens, since many callers use totalTokens as a
+  // prompt+completion total (and memory flush logic relies on this).
   const promptTokens = derivePromptTokens({
     input: usage.input,
     cacheRead: usage.cacheRead,
     cacheWrite: usage.cacheWrite,
   });
-  let total = promptTokens ?? usage.total ?? input;
+
+  const derivedTotal = promptTokens !== undefined ? promptTokens + output : input + output;
+  const usageTotal =
+    typeof usage.total === "number" && Number.isFinite(usage.total) && usage.total > 0
+      ? usage.total
+      : undefined;
+
+  let total = usageTotal !== undefined ? Math.max(usageTotal, derivedTotal) : derivedTotal;
+
   if (!(total > 0)) {
     return undefined;
   }
